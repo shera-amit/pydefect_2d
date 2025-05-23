@@ -40,6 +40,34 @@ License
 Python code is licensed under the MIT License.
 
 
+Explanation of physical parameters
+---------------------------------
+The command line options correspond to several physical quantities.
+Lengths are given in angstroms unless noted otherwise and fractional
+coordinates are measured along the supercell $z$ axis from 0 to 1.
+
+* **--center**: fractional $z$ position(s) of the 2D layer(s) used when
+  constructing dielectric profiles.
+* **--std_dev**: standard deviation $\sigma$ of the Gaussian smearing
+  applied either to the dielectric profile or to the defect charge.
+* **--step_width** / **--step_width_z**: transition widths of the
+  step-like dielectric function in the in-plane and out-of-plane
+  directions.
+* **--range**: lower and upper bounds of candidate charge positions in
+  fractional coordinates.
+* **--mesh_distance**: spacing between successive charge positions used
+  when scanning the above range.
+* **--z_pos**: explicit $z$ positions for which long-range energies are
+  calculated.
+* **--k_max** and **--k_mesh_dist**: parameters of the reciprocal-space
+  integration for computing isolated Gaussian energies.
+* **--slab_center**: reference center of the slab for estimating the
+  eigenvalue shift.
+
+The ``gauss_model_from_z`` command parallelizes over the supplied
+``--z_pos`` values unless ``--no_multiprocess`` is given.
+
+
 Workflow for 2D Point Defect Calculations
 -----------------------------------------
 <img src="https://github.com/kumagai-group/pydefect_2d/assets/4986887/99bd7211-588b-4292-9453-906b457f2650" width="600" alt="">
@@ -50,29 +78,34 @@ The workflow is depicted above.
 1. (Step 5) Generate `unitcell.yaml` that is generated from the pristine slab model calculations using pydefect. 
 Only dielectric constants are used in this code.
 
-2. (Step 6) The NK correction method necessitates knowledge of the dielectric profiles. 
-To create a dielectric profile, use either gauss_diele_dist (gdd) or step_diele_dist (sdd) subcommand.
-An example is:
-``` pydefect_2d sdd -c 0.5 -s 0.5 -w 7.15 -wz 7.15 -u unitcell.yaml -pl ../../defects/6_30A/perfect/LOCPOT --denominator 2```
+2. (Step 6) The NK correction method necessitates knowledge of the dielectric profiles.
+   Use either ``gauss_diele_dist`` (``gdd``) or ``step_diele_dist`` (``sdd``)
+   to build these profiles. The ``-c`` option gives the layer center in
+   fractional coordinates, ``-w`` (and ``-wz``) specify the interface width in
+   Å, and ``-s`` sets the Gaussian smearing of the transition.
+   Example:
+```pydefect_2d sdd -c 0.5 -s 0.5 -w 7.15 -wz 7.15 -u unitcell.yaml -pl ../../defects/6_30A/perfect/LOCPOT --denominator 2```
 
 3. Create `correction/` in the defect calculation directory.
 
-4. (Step 7) T determine the charge center position, we need a series of one-dimensional (1D) potential profiles
-as a function of the Gaussian charge position (z<sub>0</sub>). To achieve this, we firstly create `1d_gauss/`
-in `correction/` and create **gauss1_d_potential_xxxx.json** using the 1d_gauss_models (1gm) subcommand:
-An example is:
-   ```pydefect_2d 1gm -s ../../supercell_info.json -r 0.3 0.5 -dd ../dielectric_const_dist.json```
+4. (Step 7) To locate the charge center, ``1d_gauss_models`` (``1gm``) creates
+   ``1d_gauss/`` and outputs 1D potentials for a series of ``z_0`` values. The
+   two numbers supplied to ``-r`` give the fractional coordinate range, while
+   ``-m`` sets the spacing between samples.
+   Example:
+```pydefect_2d 1gm -s ../../supercell_info.json -r 0.3 0.5 -dd ../dielectric_const_dist.json```
 
 5. (Step 8)
 Compute the one-dimensional potential from first-principles calculations and determine the Gaussian charge center.
 An example is:
    ```pydefect_2d 1fp -d . -pl ../../perfect/LOCPOT -od ../1d_gauss```
 
-6. (Steps 9 and 10) 
-We next prepare the Gaussian charge energies under both three-dimensional (3D) periodic boundary conditions 
-and open boundary conditions as a function of z<sub>0</sub>.
-An example is:
-   ```pydefect_2d gmz -z 0.3{0,2,4,6,8} 0.4{0,2,4,6,8} 0.5 -s ../../supercell_info.json -cd . -dd ../dielectric_const_dist.json```
+6. (Steps 9 and 10)
+   ``gauss_model_from_z`` (``gmz``) evaluates the long-range correction for
+   selected ``-z`` positions (fractional coordinates). Multiple positions are
+   processed in parallel; use ``--no_multiprocess`` to disable this feature.
+   Example:
+```pydefect_2d gmz -z 0.3{0,2,4,6,8} 0.4{0,2,4,6,8} 0.5 -s ../../supercell_info.json -cd . -dd ../dielectric_const_dist.json```
 
 7. (Step 11)
 Then, we interpolate long-range correction term as a function of z<sub>0</sub>, and  
