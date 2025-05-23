@@ -2,6 +2,8 @@
 #  Copyright (c) 2023 Kumagai group.
 import glob
 import os
+import multiprocessing as multi
+from multiprocessing import Pool
 from copy import deepcopy
 from pathlib import Path
 from typing import List
@@ -113,12 +115,13 @@ def make_gauss_model_from_z(args):
     """depends on the supercell size and defect position"""
     lat = args.supercell_info.structure.lattice
     grids = Grids.from_z_grid(lat.matrix[:2, :2], args.diele_dist.dist.grid)
-    for z_pos in args.z_pos:
+
+    def _run(z_pos):
         logger.info(f"At z={z_pos}...")
         filename = add_z_to_filename("gauss_charge_model.json", z_pos)
         if (args.correction_dir / filename).exists():
             logger.info(f"{filename} already exists, so skip.")
-            continue
+            return
 
         gauss_charge = _make_gauss_charge_model(grids, args.std_dev, z_pos,
                                                 args.correction_dir)
@@ -127,6 +130,13 @@ def make_gauss_model_from_z(args):
 
         _make_isolated_gauss(args.diele_dist, gauss_charge, args.k_max,
                              args.k_mesh_dist, args.correction_dir)
+
+    if args.multiprocess and len(args.z_pos) > 1:
+        with Pool(multi.cpu_count()) as p:
+            p.map(_run, args.z_pos)
+    else:
+        for z_pos in args.z_pos:
+            _run(z_pos)
 
 
 def make_gaussian_energies_from_args(args):
