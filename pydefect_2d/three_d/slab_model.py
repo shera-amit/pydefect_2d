@@ -70,20 +70,16 @@ class GaussChargeModel(ChargeModel, MSONable, ToJsonFileMixIn):
         coefficient = 1 / self.std_dev ** 3 / (2 * pi) ** 1.5
 
         (nx, ny), nz = self.grids.xy_grids.num_grids, self.grids.z_grid.num_grid
-        gauss = np.zeros([nx, ny, nz])
-
         xy2 = self.grids.xy_grids.squared_length_on_grids()
-        for nz, lz in enumerate(self.grids.z_grid.grid_points()):
-            xyz2 = xy2 + self._min_z2(lz)
-            gauss[:, :, nz] = exp(- xyz2 / (2 * self.std_dev ** 2))
 
+        lz = self.grids.z_grid.grid_points()
+        shifts = self.grids.z_grid.length * (
+            np.arange(-1, 2)[:, None] + self.gauss_pos_in_frac)
+        z2 = np.min(np.abs(lz[None, :] - shifts)**2, axis=0)
+
+        gauss = np.exp(-(xy2[:, :, None] + z2) / (2 * self.std_dev ** 2))
         self.periodic_charges = coefficient * gauss
 
-    def _min_z2(self, lz):
-        return min(
-            [abs(lz - self.grids.z_grid.length * (i + self.gauss_pos_in_frac))
-             for i in range(-1, 2)]
-        ) ** 2
 
     @property
     def farthest_z_from_defect(self) -> Tuple[int, float]:
@@ -167,18 +163,13 @@ class CalcGaussChargePotential:
 
         rec_chg = self.gauss_charge_model.reciprocal_charge[i_ga, i_gb, :]
 
-        factors = []
         Gzs = self.gauss_charge_model.grids.z_grid.Gs
-        for i_gz, gz in enumerate(Gzs):
-            inv_rho_by_mz = [x_rec_e[i_gz - i_gz_prime] * self.Ga2s[i_ga] +
-                             y_rec_e[i_gz - i_gz_prime] * self.Gb2s[i_gb] +
-                             z_rec_e[i_gz - i_gz_prime] * gz * gz_prime
-                             for i_gz_prime, gz_prime in enumerate(Gzs)]
-            if i_ga == 0 and i_gb == 0 and i_gz == 0:
-                # To avoid a singular error, any non-zero value needs to be set.
-                inv_rho_by_mz[0] = 1.0
-            factors.append(inv_rho_by_mz)
-        factors = np.array(factors)
+        idx = np.subtract.outer(np.arange(len(Gzs)), np.arange(len(Gzs)))
+        factors = (x_rec_e[idx] * self.Ga2s[i_ga] +
+                   y_rec_e[idx] * self.Gb2s[i_gb] +
+                   z_rec_e[idx] * np.outer(Gzs, Gzs))
+        if i_ga == 0 and i_gb == 0:
+            factors[0, 0] = 1.0
 
         inv_pot_by_mz = solve(factors, rec_chg * z_num_grid, assume_a="her")
         return i_ga, i_gb, inv_pot_by_mz
